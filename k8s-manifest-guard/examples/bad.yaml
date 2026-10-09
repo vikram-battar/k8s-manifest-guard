@@ -1,0 +1,62 @@
+# Deliberately broken. Every check in manifest-guard should fire on this file.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broken-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: broken-app
+  template:
+    metadata:
+      labels:
+        app: broken-app
+    spec:
+      hostNetwork: true
+      containers:
+        - name: app
+          image: myapp:latest
+          # no resources, no probes, no securityContext -> runs as root
+        - name: sidecar
+          image: sidecar
+          # untagged image defaults to :latest
+          securityContext:
+            privileged: true
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly-job
+spec:
+  schedule: "0 2 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          hostPID: true
+          containers:
+            - name: job
+              image: jobs/runner:2.0.1
+              # pinned image is fine, but still no resources/probes/securityContext
+          restartPolicy: OnFailure
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: lonely-pod
+spec:
+  containers:
+    - name: main
+      image: example.com/app:3.1.0
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        # limits missing -> MEDIUM
+      livenessProbe:
+        exec:
+          command: ["true"]
+      # readinessProbe missing -> MEDIUM
+      securityContext:
+        runAsNonRoot: true
